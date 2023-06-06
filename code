@@ -8,7 +8,6 @@ import pandas as pd
 device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 train_data = pd.read_csv('train.csv')
 test_data = pd.read_csv('test_public.csv')
-metadata = pd.read_csv('metaData_taxistandsID_name_GPSlocation.csv')
 
 train_data = train_data[train_data['MISSING_DATA'] == False]
 
@@ -24,7 +23,7 @@ train_data['DAY_TYPE'] = train_data['DAY_TYPE'].map(types)
 test_data['CALL_TYPE'] = test_data['CALL_TYPE'].map(types)
 test_data['DAY_TYPE'] = test_data['DAY_TYPE'].map(types)
 
-# Define custom dataset
+# Define dataset for train_data
 class CustomDataset(Dataset):
     def __init__(self, data):
         self.x = data[['CALL_TYPE', 'ORIGIN_CALL', 'ORIGIN_STAND', 'TIMESTAMP', 'DAY_TYPE']].values
@@ -50,7 +49,7 @@ class Model(nn.Module):
         self.num_layers = num_layers
         self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
         self.bn = nn.BatchNorm1d(hidden_size)
-        self.dropout = nn.Dropout(0.6)
+        self.dropout = nn.Dropout(0.95)
         self.fc = nn.Linear(hidden_size, output_size)
 
     def forward(self, x):
@@ -79,7 +78,7 @@ loss_fn = nn.MSELoss().to(device)
 optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=0.9)
 scheduler = ExponentialLR(optimizer, gamma=0.9)
 
-# Train the model
+# Training
 model.train()
 for epoch in range(num_epochs):
     total_loss = 0
@@ -100,6 +99,8 @@ for epoch in range(num_epochs):
 
     print(f'Epoch [{epoch+1}/{num_epochs}], Average Loss: {total_loss / num_batches}')
     scheduler.step()
+    
+#Define dataset for test_data
 class TestDataset(Dataset):
     def __init__(self, data):
         self.x = data[['CALL_TYPE', 'ORIGIN_CALL', 'ORIGIN_STAND', 'TIMESTAMP', 'DAY_TYPE']].values
@@ -113,6 +114,7 @@ class TestDataset(Dataset):
 test_dataset = TestDataset(test_data)
 test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
 
+#Save predictions
 predictions = []
 model.eval()
 with torch.no_grad():
@@ -127,3 +129,9 @@ predictions = np.concatenate(predictions)
 test_data['TRAVEL_TIME'] = predictions
 test_data['TRIP_ID'] = test_data['TRIP_ID'].astype(str)
 test_data[['TRIP_ID', 'TRAVEL_TIME']].to_csv('predictions.csv', index=False)
+
+#get final weights
+final_weights = model.state_dict()
+torch.save(final_weights, 'final_weights.pth')
+with open('final_weights.txt', 'w') as f:
+    print(final_weights, file=f)
